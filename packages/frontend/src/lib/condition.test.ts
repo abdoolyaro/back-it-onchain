@@ -7,12 +7,17 @@ import {
   conditionThresholds,
   describeCondition,
   evaluateCondition,
+  fromConditionAst,
   normalizeOutcomePercentages,
   outcomeColor,
   parseCondition,
   serializeCondition,
+  toConditionAst,
   type Condition,
 } from './condition';
+import { MIN_LEAD_TIME_MS } from './validators/condition-schema';
+
+const FAR_FUTURE = Date.now() + MIN_LEAD_TIME_MS + 24 * 60 * 60 * 1000;
 
 const target: Condition = { kind: 'target_price', direction: 'above', price: 100 };
 const below: Condition = { kind: 'target_price', direction: 'below', price: 100 };
@@ -302,5 +307,51 @@ describe('outcomeColor', () => {
 
   it('does not divide by zero for an empty outcome set', () => {
     expect(() => outcomeColor(0, 0)).not.toThrow();
+  });
+});
+
+describe('toConditionAst / fromConditionAst', () => {
+  it('round-trips a target_price(above) condition through PRICE_ABOVE', () => {
+    const condition: Condition = { kind: 'target_price', direction: 'above', price: 100 };
+    const ast = toConditionAst(condition, FAR_FUTURE);
+
+    expect(ast).toMatchObject({ type: 'PRICE_ABOVE', price: 100 });
+    expect(fromConditionAst(ast)).toEqual(condition);
+  });
+
+  it('round-trips a target_price(below) condition through PRICE_BELOW', () => {
+    const condition: Condition = { kind: 'target_price', direction: 'below', price: 90 };
+    const ast = toConditionAst(condition, FAR_FUTURE);
+
+    expect(ast).toMatchObject({ type: 'PRICE_BELOW', price: 90 });
+    expect(fromConditionAst(ast)).toEqual(condition);
+  });
+
+  it('reduces a percent_move condition to its absolute threshold', () => {
+    const condition: Condition = { kind: 'percent_move', direction: 'up', percent: 10, basePrice: 100 };
+    const ast = toConditionAst(condition, FAR_FUTURE);
+
+    expect(ast).toMatchObject({ type: 'PRICE_ABOVE', price: 110 });
+  });
+
+  it('round-trips a range condition through RANGE_BOUND', () => {
+    const condition: Condition = { kind: 'range', lower: 90, upper: 110, inclusive: true };
+    const ast = toConditionAst(condition, FAR_FUTURE);
+
+    expect(ast).toMatchObject({ type: 'RANGE_BOUND', lower: 90, upper: 110 });
+    expect(fromConditionAst(ast)).toEqual(condition);
+  });
+
+  it('returns null converting a MULTI_STEP_LADDER back to a builder condition', () => {
+    const result = fromConditionAst({
+      type: 'MULTI_STEP_LADDER',
+      steps: [
+        { price: 100, multiplier: 2 },
+        { price: 150, multiplier: 5 },
+      ],
+      expiresAt: FAR_FUTURE,
+    });
+
+    expect(result).toBeNull();
   });
 });
