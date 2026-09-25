@@ -7,6 +7,8 @@ import {
   conditionThresholds,
   describeCondition,
   evaluateCondition,
+  normalizeOutcomePercentages,
+  outcomeColor,
   parseCondition,
   serializeCondition,
   type Condition,
@@ -238,5 +240,67 @@ describe('conditionPreviewSeries', () => {
 
     expect(series).toHaveLength(1);
     expect(Number.isFinite(series[0].value)).toBe(true);
+  });
+});
+
+describe('normalizeOutcomePercentages', () => {
+  it('splits an all-zero pool evenly across outcomes', () => {
+    const result = normalizeOutcomePercentages([
+      { id: 'a', total: 0 },
+      { id: 'b', total: 0 },
+      { id: 'c', total: 0 },
+      { id: 'd', total: 0 },
+    ]);
+
+    expect(result.every((entry) => entry.percent === 25)).toBe(true);
+  });
+
+  it('normalizes proportionally to reserves and sums to 100', () => {
+    const result = normalizeOutcomePercentages([
+      { id: 'a', total: 300 },
+      { id: 'b', total: 100 },
+    ]);
+
+    expect(result.find((entry) => entry.id === 'a')?.percent).toBeCloseTo(75);
+    expect(result.find((entry) => entry.id === 'b')?.percent).toBeCloseTo(25);
+    expect(result.reduce((sum, entry) => sum + entry.percent, 0)).toBeCloseTo(100);
+  });
+
+  it('clamps negative reserves to zero rather than distorting the split', () => {
+    const result = normalizeOutcomePercentages([
+      { id: 'a', total: 100 },
+      { id: 'b', total: -50 },
+    ]);
+
+    expect(result.find((entry) => entry.id === 'b')?.percent).toBe(0);
+    expect(result.find((entry) => entry.id === 'a')?.percent).toBe(100);
+  });
+
+  it('returns an empty array for an empty pool', () => {
+    expect(normalizeOutcomePercentages([])).toEqual([]);
+  });
+
+  it('handles the 32-outcome ceiling without losing precision on the sum', () => {
+    const reserves = Array.from({ length: 32 }, (_, index) => ({ id: `o${index}`, total: index + 1 }));
+    const result = normalizeOutcomePercentages(reserves);
+
+    expect(result).toHaveLength(32);
+    expect(result.reduce((sum, entry) => sum + entry.percent, 0)).toBeCloseTo(100);
+  });
+});
+
+describe('outcomeColor', () => {
+  it('returns distinct hues for each outcome in a set', () => {
+    const colors = Array.from({ length: 5 }, (_, index) => outcomeColor(index, 5));
+
+    expect(new Set(colors).size).toBe(5);
+  });
+
+  it('is deterministic for the same index and count', () => {
+    expect(outcomeColor(2, 8)).toBe(outcomeColor(2, 8));
+  });
+
+  it('does not divide by zero for an empty outcome set', () => {
+    expect(() => outcomeColor(0, 0)).not.toThrow();
   });
 });

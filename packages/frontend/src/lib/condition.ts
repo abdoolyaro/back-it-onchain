@@ -277,3 +277,55 @@ export function conditionPreviewSeries(
 
   return formatChartData(raw);
 }
+
+// ── Multi-outcome pool distribution (FE-001) ───────────────────────────────
+
+/** A single outcome's staked reserve, as tracked by the pool. */
+export interface OutcomeReserve {
+  id: string;
+  total: number;
+}
+
+/** An outcome's normalized share of the pool, 0-100. */
+export interface OutcomePercentage {
+  id: string;
+  percent: number;
+}
+
+/**
+ * Normalize outcome reserves into percentages that sum to 100.
+ *
+ * A fresh multi-outcome market has no stakes yet, so every reserve is zero.
+ * Dividing by a zero total would be meaningless, and the honest answer for an
+ * undecided market is an even split across whatever outcomes exist, not a
+ * crash or a stack of `NaN`s.
+ */
+export function normalizeOutcomePercentages(reserves: OutcomeReserve[]): OutcomePercentage[] {
+  if (reserves.length === 0) return [];
+
+  const total = reserves.reduce((sum, reserve) => sum + Math.max(0, reserve.total), 0);
+
+  if (total <= 0) {
+    const even = 100 / reserves.length;
+
+    return reserves.map((reserve) => ({ id: reserve.id, percent: even }));
+  }
+
+  return reserves.map((reserve) => ({
+    id: reserve.id,
+    percent: (Math.max(0, reserve.total) / total) * 100,
+  }));
+}
+
+/**
+ * A deterministic color for outcome `index` of `count`, spaced evenly around
+ * the hue wheel so any number of outcomes (2 to 32) gets visually distinct,
+ * reproducible colors without a lookup table to maintain.
+ */
+export function outcomeColor(index: number, count: number): string {
+  if (count <= 0) return 'hsl(0, 70%, 50%)';
+
+  const hue = Math.round((360 * index) / count);
+
+  return `hsl(${hue}, 70%, 50%)`;
+}
